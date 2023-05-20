@@ -162,3 +162,4 @@ cython_debug/
 
 *.pth
 output/*.jpg
+imagenet1000_labels.txt
