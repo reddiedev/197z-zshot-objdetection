@@ -2,14 +2,17 @@
 import sys
 import torch
 import torchvision
-print("PyTorch version:", torch.__version__)
-print("Torchvision version:", torchvision.__version__)
-print("CUDA is available:", torch.cuda.is_available())
-
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import cv2
+import os
+from segment_anything import sam_model_registry, SamPredictor
+
+print("PyTorch version:", torch.__version__)
+print("Torchvision version:", torchvision.__version__)
+print("CUDA is available:", torch.cuda.is_available())
+
 
 def show_mask(mask, ax, random_color=False):
     if random_color:
@@ -31,23 +34,22 @@ def show_box(box, ax):
     w, h = box[2] - box[0], box[3] - box[1]
     ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor='green', facecolor=(0,0,0,0), lw=2))    
 
-image = cv2.imread('images/dog_car.jpg', 1)
+absolute_path = os.path.dirname(__file__)
+relative_path = "../images/dog_car.jpg"
+imagePath = os.path.join(absolute_path, relative_path)
+print(imagePath)
+image = cv2.imread(imagePath)
 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
 plt.figure(figsize=(10,10))
 plt.imshow(image)
 plt.show()
 
-import sys
-import os
-sys.path.append("..")
-from segment_anything import sam_model_registry, SamPredictor
 
-sam_checkpoint = os.path.join("checkpoints", "sam_vit_b_01ec64.pth")
-
+sam_checkpoint = os.path.join(absolute_path, "../checkpoints/sam_vit_b_01ec64.pth")
+print(sam_checkpoint)
 model_type = "vit_b"
-
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
 sam.to(device=device)
