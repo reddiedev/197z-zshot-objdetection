@@ -84,6 +84,7 @@ plt.figure(figsize=(20,20))
 plt.imshow(image)
 plt.axis('off')
 plt.savefig("../output/source.jpg",bbox_inches='tight',pad_inches = 0)
+plt.close()
 
 sam_checkpoint = os.path.join("../checkpoints", "sam_vit_h_4b8939.pth") # sam_vit_b_01ec64 | sam_vit_h_4b8939
 model_type = "vit_h"
@@ -94,8 +95,9 @@ print(f"[1]: generating masks")
 mask_generator = SamAutomaticMaskGenerator(
     model=sam,
     points_per_side=32,
-    pred_iou_thresh=0.86,
-    stability_score_thresh=0.92,
+    points_per_batch=64,
+    pred_iou_thresh=0.95,
+    stability_score_thresh=0.95,
     crop_n_layers=1,
     crop_n_points_downscale_factor=2,
     min_mask_region_area=100,  # Requires open-cv to run post-processing
@@ -107,6 +109,7 @@ plt.imshow(image)
 show_anns(masks)
 plt.axis('off')
 plt.savefig("../output/generated-masks.jpg",bbox_inches='tight',pad_inches = 0)
+plt.close()
 
 
 # for each mask image, annotate using open-clip
@@ -135,6 +138,13 @@ imagenet_labels = list(idx2label.values())
 text = tokenizer(imagenet_labels)
 text = text.to(device)
 
+modelC, _, transformC = open_clip.create_model_and_transforms(
+  model_name="coca_ViT-L-14",
+  pretrained="mscoco_finetuned_laion2B-s13B-b90k"
+)
+
+modelC.to(device)
+
 def generate_labels(anns):
     if len(anns) == 0:
         return
@@ -148,6 +158,7 @@ def generate_labels(anns):
         plt.imshow(im)
         plt.axis('off')
         plt.savefig(f"../output/mask-{i}.jpg", bbox_inches='tight', pad_inches = 0)
+        plt.close()
         ima = Image.open(f"../output/mask-{i}.jpg")
         processedImage = preprocess(ima).unsqueeze(0)
         processedImage = processedImage.to(device)
@@ -162,8 +173,23 @@ def generate_labels(anns):
 
         index = np.argmax(text_probs.cpu().numpy())
         label = imagenet_labels[index]
-        labels.append(label)
-        print(label) 
+        if (label in nms):
+            labels.append(label)
+        print(f"[label{i}]: {label} = {label in nms}") 
+        
+        im = img.convert("RGB")
+        im = transformC(im).unsqueeze(0)
+        im = im.to(device)
+
+        with torch.no_grad(), torch.cuda.amp.autocast():
+            generated = modelC.generate(im)
+
+        labelC = open_clip.decode(generated[0]).split("<end_of_text>")[0].replace("<start_of_text>", "")
+        words = labelC.split()
+        for word in words:
+            if word in nms:
+                labels.append(labelC)
+        print(labelC)
     return labels
         
 labels = generate_labels(masks)
