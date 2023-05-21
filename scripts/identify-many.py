@@ -104,9 +104,9 @@ def generate_labels(anns,imgID,catID):
         plt.figure(figsize=(20,20))
         plt.imshow(im)
         plt.axis('off')
-        plt.savefig(f"../output/{imgID}/mask-{i}.jpg", bbox_inches='tight', pad_inches = 0)
+        plt.savefig(f"../output/{imgID}/mask-{i+1}.jpg", bbox_inches='tight', pad_inches = 0)
         plt.close()
-        im = Image.open(f"../output/{imgID}/mask-{i}.jpg").convert("RGB")
+        im = Image.open(f"../output/{imgID}/mask-{i+1}.jpg").convert("RGB")
         im = transform(im).unsqueeze(0)
         im = im.to(device)
 
@@ -114,9 +114,9 @@ def generate_labels(anns,imgID,catID):
             generated = model.generate(im)
 
         label = open_clip.decode(generated[0]).split("<end_of_text>")[0].replace("<start_of_text>", "")
-        print(f"[{i}/{length}]:",f"{mask['predicted_iou']*100:.2f}%",f"{mask['stability_score']*100:.2f}%", label)
+        print(f"[{i+1}/{length}]:",f"{mask['predicted_iou']*100:.2f}%",f"{mask['stability_score']*100:.2f}%", label)
         labels.append(label)
-        result = {'image_id':imgID,'category_id':catID,"bbox":mask['bbox'], "score": mask['stability_score']}
+        result = {'image_id':imgID,'category_id':catID,"bbox":mask['bbox'], "score": mask['predicted_iou']}
         results.append(result)
     return labels
 
@@ -128,9 +128,8 @@ for i in range(imageCount):
     imgIDs.append(imgID)
     print("--------------------------------------")
     img = cocoGt.loadImgs(imgID)[0]
-    print(img)
     imgUrl = img['coco_url']
-    print(f"[3.5]: processing {imgID} | {imgUrl}...")
+    print(f"[3.5]: ({i+1}/{imageCount}) processing {imgID} | {imgUrl}...")
     
     os.mkdir(f"../output/{imgID}")
     print(f"({imgID}): loading captions...")
@@ -171,7 +170,7 @@ for i in range(imageCount):
 
     # for each mask image, annotate using open-clip
     print(f"({imgID}): generating labels...")
-    generated_labels = generate_labels(masks,imgID)
+    generated_labels = generate_labels(masks, imgID, catID)
     # print("GENERATED LABELS")
     # pprint(generated_labels)
     # print("GROUND TRUTH LABELS")
