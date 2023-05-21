@@ -161,5 +161,7 @@ cython_debug/
 #.idea/
 
 *.pth
-output/*.jpg
+output/*/*.jpg
 imagenet1000_labels.txt
+coco/annotations/*.json
+results.json
