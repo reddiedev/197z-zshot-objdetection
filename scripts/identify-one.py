@@ -52,12 +52,17 @@ annFile = '{}/annotations/captions_{}.json'.format(dataDir,dataType)
 coco_caps=COCO(annFile)
 annIds = coco_caps.getAnnIds(imgIds=imgID)
 anns = coco_caps.loadAnns(annIds)
-coco_caps.showAnns(anns)
+ground_truth = []
+for ann in anns:
+    words = ann['caption'].split()
+    for word in words:
+        ground_truth.append(word.lower())
+
+ground_truth = list(set(ground_truth))
 
 print(f"[1]: generating image masks for {imgUrl}")
 
 # automatically generate masks using SAM
-
 
 # crop source image to each mask
 def show_anns(anns):
@@ -66,8 +71,6 @@ def show_anns(anns):
     sorted_anns = sorted(anns, key=(lambda x: x['area']), reverse=True)
     ax = plt.gca()
     ax.set_autoscale_on(False)
-    polygons = []
-    color = []
     for ann in sorted_anns:
         m = ann['segmentation']
         img = np.ones((m.shape[0], m.shape[1], 3))
@@ -86,8 +89,9 @@ plt.axis('off')
 plt.savefig("../output/source.jpg",bbox_inches='tight',pad_inches = 0)
 plt.close()
 
-sam_checkpoint = os.path.join("../checkpoints", "sam_vit_h_4b8939.pth") # sam_vit_b_01ec64 | sam_vit_h_4b8939
-model_type = "vit_h"
+print("[1]: loading sam model")
+sam_checkpoint = os.path.join("../checkpoints", "sam_vit_b_01ec64.pth") # sam_vit_b_01ec64 | sam_vit_h_4b8939
+model_type = "vit_b"
 device = torch.device   ('cuda' if torch.cuda.is_available() else 'cpu')
 sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
 sam.to(device=device)
@@ -95,7 +99,7 @@ print(f"[1]: generating masks")
 mask_generator = SamAutomaticMaskGenerator(
     model=sam,
     points_per_side=32,
-    points_per_batch=64,
+    points_per_batch=128,
     pred_iou_thresh=0.95,
     stability_score_thresh=0.95,
     crop_n_layers=1,
@@ -116,8 +120,8 @@ plt.close()
 
 
 print("[2]: creating open clip model...")
-model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='laion2b_s34b_b79k')
-tokenizer = open_clip.get_tokenizer('ViT-B-32')
+model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32-quickgelu', pretrained='laion400m_e32')
+tokenizer = open_clip.get_tokenizer('ViT-B-32-quickgelu')
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model.to(device)
@@ -137,13 +141,6 @@ with open(filename) as f:
 imagenet_labels = list(idx2label.values())
 text = tokenizer(imagenet_labels)
 text = text.to(device)
-
-modelC, _, transformC = open_clip.create_model_and_transforms(
-  model_name="coca_ViT-L-14",
-  pretrained="mscoco_finetuned_laion2B-s13B-b90k"
-)
-
-modelC.to(device)
 
 def generate_labels(anns):
     if len(anns) == 0:
@@ -176,24 +173,10 @@ def generate_labels(anns):
         if (label in nms):
             labels.append(label)
         print(f"[label{i}]: {label} = {label in nms}") 
-        
-        im = img.convert("RGB")
-        im = transformC(im).unsqueeze(0)
-        im = im.to(device)
-
-        with torch.no_grad(), torch.cuda.amp.autocast():
-            generated = modelC.generate(im)
-
-        labelC = open_clip.decode(generated[0]).split("<end_of_text>")[0].replace("<start_of_text>", "")
-        words = labelC.split()
-        for word in words:
-            if word in nms:
-                labels.append(labelC)
-        print(labelC)
     return labels
         
 labels = generate_labels(masks)
 print(labels)
-
+print(ground_truth)
 
 # evaluate generated annotations
