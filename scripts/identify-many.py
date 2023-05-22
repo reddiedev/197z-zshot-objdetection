@@ -14,6 +14,7 @@ from PIL import Image
 from pprint import pprint
 import json
 import shutil
+import urllib
 import re
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
@@ -60,7 +61,7 @@ coco_labels_words = []
 for ann in anns:
     words = ann['caption'].split()
     for word in words:
-        clean_word = re.sub(r'[\W_]', '', word.lower())
+        clean_word = re.sub(r'[^a-zA-Z0-9\s]', '', word.lower())
         coco_labels_words.append(clean_word)
 
 coco_labels_words_values = list(set(coco_labels_words))
@@ -75,13 +76,13 @@ sam.to(device=device)
 mask_generator = SamAutomaticMaskGenerator(
     model=sam,
     points_per_side=32,
-    points_per_batch=150,
+    points_per_batch=64,
     pred_iou_thresh=0.8,
-    box_nms_thresh=0.5,
+    box_nms_thresh=0.3,
     stability_score_thresh=0.9,
+    min_mask_region_area=1000,  # Requires open-cv to run post-processing
     crop_n_layers=1,
     crop_n_points_downscale_factor=2,
-    min_mask_region_area=300,  # Requires open-cv to run post-processing
 )
 
 # pred_iou_thresh (Prediction IoU Threshold):
@@ -99,9 +100,11 @@ mask_generator = SamAutomaticMaskGenerator(
 print("--------------------------------------")
 
 print("[2]: creating open clip model...")
+modelType = 'ViT-B-32-quickgelu'
+modelDataset = "laion400m_e31"
 model, _, preprocess = open_clip.create_model_and_transforms(
-    'ViT-B-32', pretrained='laion2b_s34b_b79k')
-tokenizer = open_clip.get_tokenizer('ViT-B-32')
+    modelType, pretrained=modelDataset)
+tokenizer = open_clip.get_tokenizer(modelType)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model.to(device)
@@ -109,6 +112,23 @@ model.to(device)
 print("[2]: loading coco categories as labels...")
 text = tokenizer(coco_labels_words_values)
 text = text.to(device)
+
+# print("[2]: loading imagenet 1k labels")
+# # load imagenet 1k labels and tokenize them
+# filename = "../coco/imagenet1000_labels.txt"
+# url = "https://gist.githubusercontent.com/yrevar/942d3a0ac09ec9e5eb3a/raw/238f720ff059c1f82f368259d1ca4ffa5dd8f9f5/imagenet1000_clsidx_to_labels.txt"
+
+# # Download the file if it does not exist
+# if not os.path.isfile(filename):
+#     urllib.request.urlretrieve(url, filename)
+
+# with open(filename) as f:
+#     idx2label = eval(f.read())
+
+# imagenet_labels = list(idx2label.values())
+# text = tokenizer(imagenet_labels)
+# text = text.to(device)
+
 
 print("--------------------------------------")
 
@@ -135,23 +155,38 @@ def show_anns(anns):
         ax.imshow(np.dstack((img, m*0.35)))
 
 
-def generate_labels(anns, imgID, catID):
-    if len(anns) == 0:
+def generate_masks(raw_masks, area):
+    if len(raw_masks) == 0:
         return
-    length = len(anns)
-    values = []
-    sorted_anns = sorted(anns, key=(lambda x: x['area']), reverse=True)
+    length = len(raw_masks)
+    sorted_anns = sorted(raw_masks, key=(lambda x: x['area']), reverse=True)
+    counter = 1
+    filtered_masks = []
     for i in range(length):
         mask = sorted_anns[i]
+        if (mask['area'] < area):
+            continue
         x, y, w, h = mask['bbox']
         x, y, w, h = int(x), int(y), int(w), int(h)
         im = image[y:y+h, x:x+w]
         plt.figure(figsize=(20, 20))
         plt.imshow(im)
         plt.axis('off')
-        plt.savefig(f"../output/{imgID}/mask-{i+1}.jpg",
+        plt.savefig(f"../output/{imgID}/mask-{counter}.jpg",
                     bbox_inches='tight', pad_inches=0)
         plt.close()
+        counter += 1
+        filtered_masks.append(mask)
+    return filtered_masks
+
+
+def generate_labels(anns, imgID, catID):
+    if len(anns) == 0:
+        return
+    length = len(anns)
+    values = []
+    for i in range(length):
+        mask = anns[i]
         im = Image.open(f"../output/{imgID}/mask-{i+1}.jpg").convert("RGB")
         img = preprocess(im).unsqueeze(0)
         img = img.to(device)
@@ -176,10 +211,23 @@ def generate_labels(anns, imgID, catID):
         coco_results.append(result)
 
     # generate top 5 labels according to label_accuracy and mask_area
-    sorted_values = sorted(values, key=lambda x: x['area'] * x['prob'])
+    sorted_values = sorted(values, key=lambda x: x['prob'])
     payload = sorted_values[:5]
     labels = list(map(lambda d: d['label'], payload))
     return labels
+
+
+top_one_scores = []
+top_five_scores = []
+
+
+def isTopNAccurate(substrings, string):
+    isAccurate = False
+    for substring in substrings:
+        if substring in string:
+            isAccurate = True
+            break
+    return isAccurate
 
 
 for i in range(imageCount):
@@ -190,6 +238,8 @@ for i in range(imageCount):
     imgIDs.append(imgID)
     print("--------------------------------------")
     img = cocoGt.loadImgs(imgID)[0]
+    imgArea = img['height']*img['width']
+    maskArea = int(0.05*imgArea)
     imgUrl = img['coco_url']
     print(f"[3.5]: ({i+1}/{imageCount}) processing {imgID} | {imgUrl}...")
 
@@ -219,12 +269,15 @@ for i in range(imageCount):
 
     print(f"({imgID}): generating masks...")
     # automatically generate masks using SAM
-    masks = mask_generator.generate(image)
-    print(f"({imgID}): generated {len(masks)} masks...")
+
+    raw_masks = mask_generator.generate(image)
+    print(f"({imgID}): generated {len(raw_masks)} masks...")
+    filtered_masks = generate_masks(raw_masks, maskArea)
+    print(f"({imgID}): masks filtered down to {len(filtered_masks)} masks...")
 
     plt.figure(figsize=(20, 20))
     plt.imshow(image)
-    show_anns(masks)
+    show_anns(filtered_masks)
     plt.axis('off')
     plt.savefig(f"../output/{imgID}/generated-masks.jpg",
                 bbox_inches='tight', pad_inches=0)
@@ -232,11 +285,17 @@ for i in range(imageCount):
 
     # for each mask image, annotate using open-clip
     print(f"({imgID}): generating labels...")
-    generated_labels = generate_labels(masks, imgID, catID)
+    generated_labels = generate_labels(filtered_masks, imgID, catID)
     print("GENERATED LABELS")
     pprint(generated_labels)
     print("GROUND TRUTH LABELS")
     pprint(ground_truth_labels)
+    ground_truth_string = " ".join(ground_truth_labels)
+
+    # compute top one accuracy
+    top_one_scores.append(generated_labels[0] in ground_truth_string)
+    top_five_scores.append(isTopNAccurate(
+        generated_labels, ground_truth_string))
 
 
 print("[4]: evaluating image results...")
@@ -252,4 +311,8 @@ cocoEval.accumulate()
 cocoEval.summarize()
 
 print("[4] Top-1 Accuracy SCORE")
+top_one_score = top_one_scores.count(True)/len(top_one_scores)
+print(top_one_score)
 print("[4] Top-5 Accuracy SCORE")
+top_five_score = top_five_scores.count(True)/len(top_five_scores)
+print(top_five_score)
