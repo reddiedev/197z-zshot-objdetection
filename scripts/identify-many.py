@@ -13,8 +13,9 @@ import open_clip
 from PIL import Image
 from pprint import pprint
 import json
-import random
 import shutil
+
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:256"
 
 print("[setup]: determining CUDA support...")
 print("PyTorch version:", torch.__version__)
@@ -35,17 +36,32 @@ shutil.rmtree("../output/")
 os.mkdir(f"../output/")
 
 
-print("[0]: loading coco annotations...")
+print("[0]: loading coco annotations and captions...")
 dataDir='../coco'
 dataType='val2017'
 annFile='{}/annotations/instances_{}.json'.format(dataDir,dataType)
 # initialize COCO api for instance annotations + COCO ground truth api
 cocoGt = COCO(annFile)
+annFile = '{}/annotations/captions_{}.json'.format(dataDir,dataType)
+coco_caps=COCO(annFile)
 print("--------------------------------------")
 
 # get all category IDs
 catIDs = cocoGt.getCatIds()
+cats = cocoGt.loadCats(catIDs)
+cocoCategories = [cat['name'] for cat in cats]
 imgIDs = []
+
+# get all captions
+annIds = coco_caps.getAnnIds(imgIds=[],catIds=[])
+anns = coco_caps.loadAnns(annIds)
+coco_labels_words = []
+for ann in anns:
+    words = ann['caption'].split()
+    for word in words:
+        coco_labels_words.append(word.lower())
+        
+coco_labels_words_values = list(set(coco_labels_words))
 
 print("[1]: loading sam model")
 sam_checkpoint = os.path.join("../checkpoints", "sam_vit_h_4b8939.pth") # sam_vit_b_01ec64 | sam_vit_h_4b8939
@@ -56,8 +72,8 @@ sam.to(device=device)
 mask_generator = SamAutomaticMaskGenerator(
     model=sam,
     points_per_side=32,
-    points_per_batch=128,
-    pred_iou_thresh=0.95,
+    points_per_batch=64,
+    pred_iou_thresh=0.8,
     stability_score_thresh=0.95,
     crop_n_layers=1,
     crop_n_points_downscale_factor=2,
@@ -66,11 +82,16 @@ mask_generator = SamAutomaticMaskGenerator(
 print("--------------------------------------")
 
 print("[2]: creating open clip model...")
-model, _, transform = open_clip.create_model_and_transforms(
-    model_name="coca_ViT-L-14",
-    pretrained="mscoco_finetuned_laion2B-s13B-b90k"
-)
+model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='laion2b_s34b_b79k')
+tokenizer = open_clip.get_tokenizer('ViT-B-32')
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model.to(device)
+
+print("[2]: loading coco categories as labels...")
+text = tokenizer(coco_labels_words_values)
+text = text.to(device)
+
 print("--------------------------------------")
 
 print("[3]: generating results for images...")
@@ -108,13 +129,20 @@ def generate_labels(anns,imgID,catID):
         plt.savefig(f"../output/{imgID}/mask-{i+1}.jpg", bbox_inches='tight', pad_inches = 0)
         plt.close()
         im = Image.open(f"../output/{imgID}/mask-{i+1}.jpg").convert("RGB")
-        im = transform(im).unsqueeze(0)
-        im = im.to(device)
+        img = preprocess(im).unsqueeze(0)
+        img = img.to(device)
 
         with torch.no_grad(), torch.cuda.amp.autocast():
-            generated = model.generate(im)
+            image_features = model.encode_image(img)
+            text_features = model.encode_text(text)
+            image_features /= image_features.norm(dim=-1, keepdim=True)
+            text_features /= text_features.norm(dim=-1, keepdim=True)
+            text_probs = (100.0 * image_features @ text_features.T).softmax(dim=-1)
 
-        label = open_clip.decode(generated[0]).split("<end_of_text>")[0].replace("<start_of_text>", "")
+
+        index = np.argmax(text_probs.cpu().numpy())
+        label = coco_labels_words_values[index]
+        
         print(f"[{i+1}/{length}]:",f"{mask['predicted_iou']*100:.2f}%",f"{mask['stability_score']*100:.2f}%", label)
         labels.append(label)
         result = {'image_id':imgID,'category_id':catID,"bbox":mask['bbox'], "score": mask['predicted_iou']}
@@ -133,10 +161,8 @@ for i in range(imageCount):
     print(f"[3.5]: ({i+1}/{imageCount}) processing {imgID} | {imgUrl}...")
     
     os.mkdir(f"../output/{imgID}")
-    print(f"({imgID}): loading captions...")
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~") 
-    annFile = '{}/annotations/captions_{}.json'.format(dataDir,dataType)
-    coco_caps=COCO(annFile)
+    print(f"({imgID}): loading captions...")
     annIds = coco_caps.getAnnIds(imgIds=imgID)
     anns = coco_caps.loadAnns(annIds)
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~") 
@@ -172,10 +198,10 @@ for i in range(imageCount):
     # for each mask image, annotate using open-clip
     print(f"({imgID}): generating labels...")
     generated_labels = generate_labels(masks, imgID, catID)
-    # print("GENERATED LABELS")
-    # pprint(generated_labels)
-    # print("GROUND TRUTH LABELS")
-    # pprint(ground_truth_labels)
+    print("GENERATED LABELS")
+    pprint(generated_labels)
+    print("GROUND TRUTH LABELS")
+    pprint(ground_truth_labels)
 
 
 print("[4]: evaluating image results...")
