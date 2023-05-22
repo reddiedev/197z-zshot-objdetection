@@ -96,8 +96,9 @@ def generate_labels(anns,imgID,catID):
         return
     length = len(anns)
     labels = []
+    sorted_anns = sorted(anns, key=(lambda x: x['area']), reverse=True)
     for i in range(length):
-        mask = anns[i]
+        mask = sorted_anns[i]
         x,y,w,h = mask['bbox']
         x,y,w,h = int(x), int(y), int(w), int(h)
         im = image[y:y+h, x:x+w]
