@@ -134,6 +134,8 @@ print("[3]: generating results for images...")
 
 coco_results = []
 label_results = []
+top_one_scores = []
+top_five_scores = []
 
 # crop source image to each mask
 
@@ -213,10 +215,6 @@ def generate_labels(anns, imgID, catID):
     payload = sorted_values[:5]
     labels = list(map(lambda d: d['label'], payload))
     return labels
-
-
-top_one_scores = []
-top_five_scores = []
 
 
 def isTopNAccurate(substrings, string):
