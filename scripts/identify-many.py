@@ -14,11 +14,9 @@ from PIL import Image
 from pprint import pprint
 import json
 import shutil
-import urllib
 import re
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
-
 print("[setup]: determining CUDA support...")
 print("PyTorch version:", torch.__version__)
 print("Torchvision version:", torchvision.__version__)
