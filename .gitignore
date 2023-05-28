@@ -162,6 +162,7 @@ cython_debug/
 
 *.pth
 output/*/*.jpg
+output
 imagenet1000_labels.txt
 coco/annotations/*.json
 results.json
