@@ -18,6 +18,7 @@ use SAM to perform zero-shot object detection using COCO 2017 val split.
 - [x] Show Summary Statistics
 
 ## Approach
+[Project Approach](images/project_approach.png)
 - 
 
 ## Notes
