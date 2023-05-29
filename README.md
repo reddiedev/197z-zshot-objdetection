@@ -18,11 +18,20 @@ use SAM to perform zero-shot object detection using COCO 2017 val split.
 - [x] Show Summary Statistics
 
 ## Approach
-[Project Approach](images/project_approach.png)
-- 
+![Project Approach](images/project_approach.png)
+
+1. Automatically generate object masks for source image using [SAM AutomaticMaskGenerator](https://github.com/facebookresearch/segment-anything/blob/main/notebooks/automatic_mask_generator_example.ipynb)
+2. Filter masks using predicted_iou, stability score, and mask image area to garner better masking results
+3. Crop source image based on generated masks
+4. Run each crop under Open Clip (trained with CoCo category labels)
+5. Filter 
 
 ## Notes
-
+- It is recommended to use a CUDA-powered GPU with at least 40 GB VRAM, such as 2x L4s (current implementation), A100 40GB, or anything similar
+    - if hardware resources are limited, it is recommended to use lower `points_per_batch` setting in SAM as well as to use a lighter pretrained model in OpenClip
+- It is recommended to clone the repository for easier use, so you don't have to manually download any required files
+- Due to hardware limitations, I am running the repo in a Google Cloud VM Instance. You may also consider leveraging [Credits](https://cloud.google.com/billing/docs/how-to/edu-grants) to make high-level computing accessible
+- Ultimately, the performance of the system is limited because pretrained models are used instead of using the CoCo 2017 training dataset. This includes fine calibration of the SAM AutomaticMaskGenerator in comparison to the performance of Yolo v8. Similarly, the performance of OpenClip is bottlenecked by the quality of chosen labels and the pretrained model used.
 
 ## Usage 
 1. Duplicate this repository on a working directory
