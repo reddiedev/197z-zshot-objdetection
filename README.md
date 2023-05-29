@@ -5,14 +5,14 @@ use SAM to perform zero-shot object detection using COCO 2017 val split.
 
 ## Tools/ References
 - [SegmentAnything](https://github.com/facebookresearch/segment-anything)
-- [OpenClip](https://github.com/mlfoundations/open_clip)
+- [OpenCLIP](https://github.com/mlfoundations/open_clip)
 - [Coco 2017 Validation Dataset](https://cocodataset.org/#home)
 - [roatienza/mlops](https://github.com/roatienza/mlops)
 - [roatienza/Deep-Learning-Experiments](https://github.com/roatienza/Deep-Learning-Experiments)
 - [Google Cloud G2 GPU VM (2x Nvidia L4)](https://cloud.google.com/blog/products/compute/introducing-g2-vms-with-nvidia-l4-gpus)
 
 ## Goals
-- [x] Integrate SAM with OpenClip
+- [x] Integrate SAM with OpenCLIP
 - [x] Compare CoCo Ground Truth vs Model Prediction vs Yolov8 Prediction
 - [x] Support random image pick from CoCo 2017 validation split OR manual image upload (link)
 - [x] Show Summary Statistics
@@ -23,15 +23,18 @@ use SAM to perform zero-shot object detection using COCO 2017 val split.
 1. Automatically generate object masks for source image using [SAM AutomaticMaskGenerator](https://github.com/facebookresearch/segment-anything/blob/main/notebooks/automatic_mask_generator_example.ipynb)
 2. Filter masks using predicted_iou, stability score, and mask image area to garner better masking results
 3. Crop source image based on generated masks
-4. Run each crop under Open Clip (trained with CoCo category labels)
-5. Filter 
+4. Run each crop under [OpenCLIP](https://github.com/mlfoundations/open_clip#pretrained-model-interface) (trained with [CoCo paper labels](https://tech.amikelive.com/node-718/what-object-categories-labels-are-in-coco-dataset/))
+5. Filter labels for most probable labels based on generated text probability
+6. Evaluate mask bounding boxes using [mAPs score](https://github.com/tylin/coco-caption/blob/master/cocoEvalCapDemo.ipynb) and label accuracy (Top-1 vs Top-5) from ground truth labels
+7. Tune SAM Model parameters to achieve better mAPs performance
+8. Select appropriate OpenCLIP [pretrained model](https://github.com/mlfoundations/open_clip#pretrained-model-interface) to achieve better mAPs and label accuracy
 
 ## Notes
 - It is recommended to use a CUDA-powered GPU with at least 40 GB VRAM, such as 2x L4s (current implementation), A100 40GB, or anything similar
-    - if hardware resources are limited, it is recommended to use lower `points_per_batch` setting in SAM as well as to use a lighter pretrained model in OpenClip
+    - if hardware resources are limited, it is recommended to use lower `points_per_batch` setting in SAM as well as to use a lighter pretrained model in OpenCLIP
 - It is recommended to clone the repository for easier use, so you don't have to manually download any required files
 - Due to hardware limitations, I am running the repo in a Google Cloud VM Instance. You may also consider leveraging [Credits](https://cloud.google.com/billing/docs/how-to/edu-grants) to make high-level computing accessible
-- Ultimately, the performance of the system is limited because pretrained models are used instead of using the CoCo 2017 training dataset. This includes fine calibration of the SAM AutomaticMaskGenerator in comparison to the performance of Yolo v8. Similarly, the performance of OpenClip is bottlenecked by the quality of chosen labels and the pretrained model used.
+- Ultimately, the performance of the system is limited because pretrained models are used instead of using the CoCo 2017 training dataset. This includes fine calibration of the SAM AutomaticMaskGenerator in comparison to the performance of Yolo v8. Similarly, the performance of OpenCLIP is bottlenecked by the quality of chosen labels and the pretrained model used.
 
 ## Usage 
 1. Duplicate this repository on a working directory
@@ -59,4 +62,7 @@ You may use the test images
 https://djl.ai/examples/src/test/resources/dog_bike_car.jpg
 
 ```
+
+4. To view complete logs and information, set `VERBOSE_LOGGING` to `TRUE`
+
 
