@@ -65,4 +65,7 @@ https://djl.ai/examples/src/test/resources/dog_bike_car.jpg
 
 4. To view complete logs and information, set `VERBOSE_LOGGING` to `TRUE`
 
+# Acknowledgements
+[Professor, Rowel Atienza](https://github.com/roatienza)
+
 
