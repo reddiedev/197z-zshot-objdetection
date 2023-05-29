@@ -1,5 +1,5 @@
 # EEE 197z Project 1 - Zero Shot Object Detection
-use SAM to perform zero-shot object detection using COCO 2017 val split. 
+use SAM and OpenCLIP to perform zero-shot object detection using COCO 2017 val split. 
 
 *Author: Sean Red Mendoza | 2020-01751 | scmendoza5@up.edu.ph*
 
